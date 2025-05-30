@@ -16,80 +16,53 @@ $fetch = Store::getInstance();
 $checkDyeingOrder = $_GET['dyeingOrder'] ?? null;
 
 if (!$checkDyeingOrder) {
-
     echo json_encode(["status" => "error", "message" => "Invalid Action"]);
-
     exit;
 }
 
 $input = json_decode(file_get_contents("php://input"), true);
 
 if (!$input) {
-
-    echo json_encode(["status" => "error", "message" => "Invalid request", "dyeingOrder" => $checkDyeingOrder]);
-
+    echo json_encode(["status" => "error", "message" => "Invalid request"]);
     exit;
 }
 
-$data = $fetch->fetchData("production_qty",  "dyeing_order = '$checkDyeingOrder'");
+$existing = $fetch->fetchData(
+    "production_qty",
+    "dyeing_order = '$checkDyeingOrder' AND status = '{$input['status']}' AND production_qty = '{$input['productionQty']}'"
+);
 
-if (is_array($data) && count($data) > 0) {
+if (is_array($existing) && count($existing) > 0) {
+    echo json_encode(["status" => "error", "message" => "No changes made", "dyeingOrder" => $checkDyeingOrder]);
+    exit;
+}
 
-    $dataToUpdate1 = [
-        "production_qty" => $input['productionQty'],
-        "status" => $input['status'],
-    ];
+$dataToInsert = [
+    "status" => $input['status'],
+    "production_qty" => $input['productionQty'],
+    "dyeing_order" => $checkDyeingOrder
+];
 
-    $allRowsSame = true;
+$insert = $fetch->insert("production_qty", $dataToInsert);
+// echo json_encode(["status" => "success", "message" => "Insert Successful", 'dyeingOrder' => $checkDyeingOrder]);
 
-    foreach ($data as $row) {
 
-        if ($row['status'] === $input['status'] && $row['production_qty'] === $input['productionQty']) {
+$find = $fetch->fetchData("dyeingorders", "dyeingOrder = '$checkDyeingOrder'",);
+if (is_array($find) && count($find) > 0) {
+    if (trim($input['status']) === 'Total Production Qty') {
+        foreach ($find as $row) {
+            $production_qty = $row['production_qty'] ?? 0;
+            $dataToUpdate = [
+                "production_qty" => ["RAW" => "production_qty + {$input['productionQty']}"]
+            ];
 
-            $allRowsSame = true;
-        } else {
-            
-            $allRowsSame = false;
-            break;
+            $fetch->update(
+                "dyeingorders",
+                $dataToUpdate,
+                "dyeingOrder = '$checkDyeingOrder'"
+            );
         }
-
-        if($row['production_qty'] >= $input['productionQty']) {
-
-            echo json_encode(["status" => "error", "message" => "Production quantity cannot be less than the previous value"]);
-
-            exit;
-        }
-    }
-
-    if ($allRowsSame) {
-
-        
-
-        echo json_encode(["status" => "error", "message" => "No changes detected but data updated"]);
-
-        exit;
-    }
-
-    $update = $fetch->update("production_qty", $dataToUpdate1, "dyeing_order = '$checkDyeingOrder'");
-
-    if ($update) {
-
-        echo json_encode(["status" => "success", "message" => $input]);
-
     } else {
-
-        echo json_encode(["status" => "error", "message" => "Failed to update data", "dyeingOrder" => $checkDyeingOrder]);
-
+        echo json_encode(["status" => "error", "message" => $input['status'], 'dyeingOrder' => $checkDyeingOrder]);
     }
-} else {
-
-    $dataToUpdate1 = [
-        "status" => $input['status'],
-        "production_qty" => $input['productionQty'],
-        "dyeing_order" => $checkDyeingOrder,
-    ];
-
-    $fetch->insert("production_qty", $dataToUpdate1);
-
-    echo json_encode(["status" => "success", "message" => "Insert Successful"]);
 }
